@@ -32,7 +32,7 @@ const HighwayAnimation: React.FC = () => {
     // Truck (center lane)
     {
       x: 200,
-      y: HIGHWAY_Y + LANE_WIDTH,
+      y: HIGHWAY_Y + LANE_WIDTH + (LANE_WIDTH - 40) / 2,
       width: 80,
       height: 40,
       color: '#3B82F6',
@@ -43,20 +43,20 @@ const HighwayAnimation: React.FC = () => {
     },
     // Car 1 (right lane) - will overtake
     {
-      x: 150,
-      y: HIGHWAY_Y + LANE_WIDTH * 2,
+      x: 120,
+      y: HIGHWAY_Y + LANE_WIDTH * 2 + (LANE_WIDTH - 30) / 2,
       width: 50,
       height: 30,
       color: '#EF4444',
-      speed: 3,
+      speed: 3.5,
       lane: 2,
       isOvertaking: false,
       targetLane: 2
     },
     // Car 2 (left lane)
     {
-      x: 180,
-      y: HIGHWAY_Y,
+      x: 250,
+      y: HIGHWAY_Y + (LANE_WIDTH - 30) / 2,
       width: 50,
       height: 30,
       color: '#10B981',
@@ -130,12 +130,12 @@ const HighwayAnimation: React.FC = () => {
 
   const createExplosion = (x: number, y: number) => {
     explosionParticles.current = [];
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       explosionParticles.current.push({
-        x: x + Math.random() * 60 - 30,
-        y: y + Math.random() * 40 - 20,
-        vx: (Math.random() - 0.5) * 10,
-        vy: (Math.random() - 0.5) * 10,
+        x: x + Math.random() * 80 - 40,
+        y: y + Math.random() * 60 - 30,
+        vx: (Math.random() - 0.5) * 15,
+        vy: (Math.random() - 0.5) * 15,
         life: 1
       });
     }
@@ -143,32 +143,38 @@ const HighwayAnimation: React.FC = () => {
   };
 
   const checkCollision = (vehicle1: Vehicle, vehicle2: Vehicle): boolean => {
+    // Add some padding to make collision detection more accurate
+    const padding = 5;
     return (
-      vehicle1.x < vehicle2.x + vehicle2.width &&
-      vehicle1.x + vehicle1.width > vehicle2.x &&
-      vehicle1.y < vehicle2.y + vehicle2.height &&
-      vehicle1.y + vehicle1.height > vehicle2.y
+      vehicle1.x < vehicle2.x + vehicle2.width - padding &&
+      vehicle1.x + vehicle1.width - padding > vehicle2.x &&
+      vehicle1.y < vehicle2.y + vehicle2.height - padding &&
+      vehicle1.y + vehicle1.height - padding > vehicle2.y
     );
   };
 
   const updateVehicles = () => {
+    if (collisionOccurred) return; // Stop updating if collision occurred
+
     const vehicles = vehiclesRef.current;
     timeRef.current += 1;
 
-    // Start overtaking after 3 seconds
-    if (timeRef.current > 180 && !vehicles[1].isOvertaking && !collisionOccurred) {
+    // Start overtaking after 2 seconds
+    if (timeRef.current > 120 && !vehicles[1].isOvertaking) {
       vehicles[1].isOvertaking = true;
       vehicles[1].targetLane = 0; // Move to left lane
     }
 
     vehicles.forEach((vehicle, index) => {
-      // Move forward
-      vehicle.x += vehicle.speed;
+      // Move forward only if no collision
+      if (!collisionOccurred) {
+        vehicle.x += vehicle.speed;
+      }
 
       // Handle lane changing for overtaking car
-      if (vehicle.isOvertaking) {
+      if (vehicle.isOvertaking && !collisionOccurred) {
         const targetY = HIGHWAY_Y + vehicle.targetLane * LANE_WIDTH + (LANE_WIDTH - vehicle.height) / 2;
-        const laneChangeSpeed = 2;
+        const laneChangeSpeed = 3;
         
         if (Math.abs(vehicle.y - targetY) > laneChangeSpeed) {
           vehicle.y += vehicle.y < targetY ? laneChangeSpeed : -laneChangeSpeed;
@@ -178,21 +184,25 @@ const HighwayAnimation: React.FC = () => {
         }
       }
 
-      // Check for collisions
-      if (index === 1 && !collisionOccurred) { // Car 1 (overtaking car)
-        vehicles.forEach((otherVehicle, otherIndex) => {
-          if (otherIndex !== index && checkCollision(vehicle, otherVehicle)) {
-            setCollisionOccurred(true);
-            createExplosion(vehicle.x, vehicle.y);
-            // Stop both vehicles
-            vehicle.speed = 0;
-            otherVehicle.speed = 0;
-          }
-        });
+      // Check for collision between car1 (index 1) and car2 (index 2)
+      if (index === 1 && !collisionOccurred) {
+        if (checkCollision(vehicles[1], vehicles[2])) {
+          console.log('COLLISION DETECTED!');
+          setCollisionOccurred(true);
+          createExplosion((vehicles[1].x + vehicles[2].x) / 2, (vehicles[1].y + vehicles[2].y) / 2);
+          
+          // Stop all vehicles immediately
+          vehicles.forEach(v => {
+            v.speed = 0;
+          });
+          
+          // Stop the animation
+          setIsPlaying(false);
+        }
       }
 
-      // Reset position when off screen
-      if (vehicle.x > CANVAS_WIDTH) {
+      // Reset position when off screen (only if no collision)
+      if (vehicle.x > CANVAS_WIDTH && !collisionOccurred) {
         vehicle.x = -vehicle.width;
       }
     });
@@ -202,7 +212,7 @@ const HighwayAnimation: React.FC = () => {
       explosionParticles.current.forEach(particle => {
         particle.x += particle.vx;
         particle.y += particle.vy;
-        particle.life -= 0.02;
+        particle.life -= 0.015;
       });
       
       explosionParticles.current = explosionParticles.current.filter(p => p.life > 0);
@@ -234,19 +244,24 @@ const HighwayAnimation: React.FC = () => {
 
     // Add collision text
     if (collisionOccurred) {
-      ctx.fillStyle = '#EF4444';
-      ctx.font = 'bold 36px Arial';
+      ctx.fillStyle = '#FF0000';
+      ctx.font = 'bold 48px Arial';
       ctx.textAlign = 'center';
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.strokeText('COLLISION!', CANVAS_WIDTH / 2, 100);
       ctx.fillText('COLLISION!', CANVAS_WIDTH / 2, 100);
     }
 
-    if (isPlaying) {
+    if (isPlaying && !collisionOccurred) {
       animationRef.current = requestAnimationFrame(animate);
     }
   };
 
   const startAnimation = () => {
-    setIsPlaying(true);
+    if (!collisionOccurred) {
+      setIsPlaying(true);
+    }
   };
 
   const pauseAnimation = () => {
@@ -271,7 +286,7 @@ const HighwayAnimation: React.FC = () => {
     vehiclesRef.current = [
       {
         x: 200,
-        y: HIGHWAY_Y + LANE_WIDTH,
+        y: HIGHWAY_Y + LANE_WIDTH + (LANE_WIDTH - 40) / 2,
         width: 80,
         height: 40,
         color: '#3B82F6',
@@ -281,19 +296,19 @@ const HighwayAnimation: React.FC = () => {
         targetLane: 1
       },
       {
-        x: 150,
-        y: HIGHWAY_Y + LANE_WIDTH * 2,
+        x: 120,
+        y: HIGHWAY_Y + LANE_WIDTH * 2 + (LANE_WIDTH - 30) / 2,
         width: 50,
         height: 30,
         color: '#EF4444',
-        speed: 3,
+        speed: 3.5,
         lane: 2,
         isOvertaking: false,
         targetLane: 2
       },
       {
-        x: 180,
-        y: HIGHWAY_Y,
+        x: 250,
+        y: HIGHWAY_Y + (LANE_WIDTH - 30) / 2,
         width: 50,
         height: 30,
         color: '#10B981',
@@ -353,6 +368,7 @@ const HighwayAnimation: React.FC = () => {
           onClick={isPlaying ? pauseAnimation : startAnimation}
           variant="default"
           size="lg"
+          disabled={collisionOccurred && !isPlaying}
         >
           {isPlaying ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
           {isPlaying ? 'Pause' : 'Play'}
@@ -384,9 +400,8 @@ const HighwayAnimation: React.FC = () => {
           </div>
         </div>
         <p>
-          The animation shows three vehicles moving on a highway. After a few seconds, 
-          the red car (Car 1) attempts to overtake the blue truck by moving into the left lane, 
-          where it collides with the green car (Car 2).
+          The red car attempts to overtake the blue truck by moving into the left lane, 
+          where it collides with the green car. All vehicles stop immediately upon collision.
         </p>
       </div>
     </div>
